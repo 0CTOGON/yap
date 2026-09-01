@@ -1,3 +1,8 @@
 [workspace]
-members = ["yap-cli", "yap-protocol", "yap-core"]
-resolver = "3"
+members = [
+    "yap-protocol",
+    "yap-core",
+    "yap-cli",
+]
+
+resolver = "2"
