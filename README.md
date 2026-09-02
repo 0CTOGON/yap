@@ -132,7 +132,7 @@ A GUI client does **not** need to use the YAP CLI. As long as it speaks the YAP 
 
 ## License
 
-Apache License 2.0.
+See LICENSE for details.
 
 ---
 
