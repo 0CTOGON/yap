@@ -6,38 +6,22 @@ pub fn banner() {
     println!();
 }
 
-pub fn chat_message(
-    from: &str,
-    message: &str,
-) {
+pub fn chat_message(from: &str, message: &str) {
     println!();
     println!("{from}: {message}");
 }
 
-pub fn direct_message(
-    from: &str,
-    to: &str,
-    message: &str,
-) {
+pub fn direct_message(from: &str, to: &str, message: &str) {
     println!();
     println!("{from} -> {to}: {message}");
 }
 
-pub fn connected(
-    username: &str,
-    address: &str,
-) {
+pub fn connected(username: &str, address: &str) {
     println!();
-    println!(
-        "*** {username} connected ({address})"
-    );
+    println!("*** {username} connected ({address})");
 }
 
-pub fn disconnected(
-    username: &str,
-) {
+pub fn disconnected(username: &str) {
     println!();
-    println!(
-        "*** {username} disconnected"
-    );
+    println!("*** {username} disconnected");
 }

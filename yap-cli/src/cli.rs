@@ -2,36 +2,23 @@
 pub enum Command {
     Help,
 
-    Connect {
-        address: String,
-    },
+    Connect { address: String },
 
-    Disconnect {
-        username: String,
-    },
+    Disconnect { username: String },
 
     Peers,
 
-    Yap {
-        message: String,
-    },
+    Yap { message: String },
 
-    To {
-        username: String,
-        message: String,
-    },
+    To { username: String, message: String },
 
-    Name {
-        username: String,
-    },
+    Name { username: String },
 
     Quit,
 
     Empty,
 
-    Unknown {
-        command: String,
-    },
+    Unknown { command: String },
 }
 
 pub fn parse(line: &str) -> Command {
@@ -41,77 +28,47 @@ pub fn parse(line: &str) -> Command {
         return Command::Empty;
     }
 
-    let mut parts =
-        line.splitn(2, ' ');
+    let mut parts = line.splitn(2, ' ');
 
-    let command =
-        parts.next().unwrap_or("");
+    let command = parts.next().unwrap_or("");
 
-    let rest =
-        parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
 
     match command.to_lowercase().as_str() {
-        "help" | "?" => {
-            Command::Help
-        }
+        "help" | "?" => Command::Help,
 
-        "connect" => {
-            Command::Connect {
-                address: rest.to_string(),
-            }
-        }
+        "connect" => Command::Connect {
+            address: rest.to_string(),
+        },
 
-        "disconnect" => {
-            Command::Disconnect {
-                username: rest.to_string(),
-            }
-        }
+        "disconnect" => Command::Disconnect {
+            username: rest.to_string(),
+        },
 
-        "peers" => {
-            Command::Peers
-        }
+        "peers" => Command::Peers,
 
-        "yap" => {
-            Command::Yap {
-                message: rest.to_string(),
-            }
-        }
+        "yap" => Command::Yap {
+            message: rest.to_string(),
+        },
 
         "to" => {
-            let mut args =
-                rest.splitn(2, ' ');
+            let mut args = rest.splitn(2, ' ');
 
-            let username =
-                args.next()
-                    .unwrap_or("")
-                    .to_string();
+            let username = args.next().unwrap_or("").to_string();
 
-            let message =
-                args.next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
+            let message = args.next().unwrap_or("").trim().to_string();
 
-            Command::To {
-                username,
-                message,
-            }
+            Command::To { username, message }
         }
 
-        "name" => {
-            Command::Name {
-                username: rest.to_string(),
-            }
-        }
+        "name" => Command::Name {
+            username: rest.to_string(),
+        },
 
-        "quit" | "exit" => {
-            Command::Quit
-        }
+        "quit" | "exit" => Command::Quit,
 
-        _ => {
-            Command::Unknown {
-                command: command.to_string(),
-            }
-        }
+        _ => Command::Unknown {
+            command: command.to_string(),
+        },
     }
 }

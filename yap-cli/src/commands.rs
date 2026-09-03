@@ -2,10 +2,7 @@ use yap_core::Network;
 
 use crate::cli::Command;
 
-pub async fn execute(
-    command: Command,
-    network: &Network,
-) -> bool {
+pub async fn execute(command: Command, network: &Network) -> bool {
     match command {
         Command::Empty => {}
 
@@ -25,52 +22,32 @@ pub async fn execute(
 
         Command::Connect { address } => {
             if address.is_empty() {
-                println!(
-                    "Usage: connect <host:port>"
-                );
+                println!("Usage: connect <host:port>");
                 return false;
             }
 
-            println!(
-                "Connecting to {address}..."
-            );
+            println!("Connecting to {address}...");
 
-            match network
-                .connect(&address)
-                .await
-            {
+            match network.connect(&address).await {
                 Ok(actual) => {
-                    println!(
-                        "Connected to {actual}"
-                    );
+                    println!("Connected to {actual}");
                 }
 
                 Err(error) => {
-                    println!(
-                        "Connection failed: {error}"
-                    );
+                    println!("Connection failed: {error}");
                 }
             }
         }
 
-        Command::Disconnect {
-            username,
-        } => {
+        Command::Disconnect { username } => {
             if username.is_empty() {
-                println!(
-                    "Usage: disconnect <username>"
-                );
+                println!("Usage: disconnect <username>");
                 return false;
             }
 
-            match network
-                .disconnect(&username)
-                .await
-            {
+            match network.disconnect(&username).await {
                 Ok(()) => {
-                    println!(
-                        "Disconnected from {username}."
-                    );
+                    println!("Disconnected from {username}.");
                 }
 
                 Err(error) => {
@@ -80,13 +57,10 @@ pub async fn execute(
         }
 
         Command::Peers => {
-            let peers =
-                network.peers().await;
+            let peers = network.peers().await;
 
             if peers.is_empty() {
-                println!(
-                    "No directly connected peers."
-                );
+                println!("No directly connected peers.");
             } else {
                 println!("Peers:");
 
@@ -98,91 +72,51 @@ pub async fn execute(
 
         Command::Yap { message } => {
             if message.trim().is_empty() {
-                println!(
-                    "Usage: yap <message>"
-                );
+                println!("Usage: yap <message>");
                 return false;
             }
 
-            match network
-                .broadcast(&message)
-                .await
-            {
+            match network.broadcast(&message).await {
                 Ok(()) => {
-                    println!(
-                        "{}: {}",
-                        network.username().await,
-                        message
-                    );
+                    println!("{}: {}", network.username().await, message);
                 }
 
                 Err(error) => {
-                    println!(
-                        "Yap failed: {error}"
-                    );
+                    println!("Yap failed: {error}");
                 }
             }
         }
 
-        Command::To {
-            username,
-            message,
-        } => {
-            if username.trim().is_empty()
-                || message.trim().is_empty()
-            {
-                println!(
-                    "Usage: to <username> <message>"
-                );
+        Command::To { username, message } => {
+            if username.trim().is_empty() || message.trim().is_empty() {
+                println!("Usage: to <username> <message>");
                 return false;
             }
 
-            match network
-                .send_direct(
-                    &username,
-                    &message,
-                )
-                .await
-            {
+            match network.send_direct(&username, &message).await {
                 Ok(()) => {
-                    println!(
-                        "{} -> {}: {}",
-                        network.username().await,
-                        username,
-                        message
-                    );
+                    println!("{} -> {}: {}", network.username().await, username, message);
                 }
 
                 Err(error) => {
-                    println!(
-                        "Send failed: {error}"
-                    );
+                    println!("Send failed: {error}");
                 }
             }
         }
 
         Command::Name { username } => {
             if username.is_empty() {
-                println!(
-                    "Usage: name <username>"
-                );
+                println!("Usage: name <username>");
                 return false;
             }
 
-            match network
-                .set_username(&username)
-                .await
-            {
+            match network.set_username(&username).await {
                 Ok(()) => {
-                    println!(
-                        "Username changed to {username}."
-                    );
+                    println!("Username changed to {username}.");
                 }
 
                 Err(error) => {
-                    println!(
-                        "Name change failed: {error}"
-                    );
+                    println!("Name change failed: {error}");
                 }
             }
         }
@@ -192,13 +126,9 @@ pub async fn execute(
         }
 
         Command::Unknown { command } => {
-            println!(
-                "Unknown command: {command}"
-            );
+            println!("Unknown command: {command}");
 
-            println!(
-                "Try 'help'."
-            );
+            println!("Try 'help'.");
         }
     }
 

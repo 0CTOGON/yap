@@ -1,36 +1,14 @@
-use std::{
-    collections::HashMap,
-    io,
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{collections::HashMap, io, net::SocketAddr, sync::Arc, time::Duration};
 
-use quinn::{
-    ClientConfig,
-    Endpoint,
-    ServerConfig,
-};
+use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig};
 
 use rustls::{
-    client::danger::{
-        HandshakeSignatureValid,
-        ServerCertVerified,
-        ServerCertVerifier,
-    },
-    pki_types::{
-        CertificateDer,
-        PrivateKeyDer,
-        ServerName,
-        UnixTime,
-    },
-    DigitallySignedStruct,
-    SignatureScheme,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime},
+    DigitallySignedStruct, SignatureScheme,
 };
 
-use tokio::sync::{
-    mpsc::UnboundedSender,
-    Mutex,
-};
+use tokio::sync::{mpsc::UnboundedSender, Mutex};
 
 use yap_protocol::Packet;
 
@@ -45,17 +23,14 @@ pub enum IncomingMessage {
         to: String,
         message: String,
     },
-
     Chat {
         from: String,
         message: String,
     },
-
     PeerConnected {
         username: String,
         address: SocketAddr,
     },
-
     PeerDisconnected {
         username: String,
     },
@@ -78,12 +53,12 @@ impl Network {
         port: u16,
         events_tx: UnboundedSender<IncomingMessage>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // Explicitly select Rustls' ring crypto provider.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let server_config = make_server_config()?;
 
-        let endpoint = Endpoint::server(
-            server_config,
-            SocketAddr::from(([0, 0, 0, 0], port)),
-        )?;
+        let endpoint = Endpoint::server(server_config, SocketAddr::from(([0, 0, 0, 0], port)))?;
 
         let network = Self {
             identity: Arc::new(Mutex::new(identity)),
@@ -101,21 +76,14 @@ impl Network {
     }
 
     pub async fn username(&self) -> String {
-        self.identity
-            .lock()
-            .await
-            .username()
-            .to_string()
+        self.identity.lock().await.username().to_string()
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.endpoint.local_addr()
     }
 
-    pub async fn set_username(
-        &self,
-        username: &str,
-    ) -> Result<(), String> {
+    pub async fn set_username(&self, username: &str) -> Result<(), String> {
         let username = username.trim();
 
         if username.is_empty() {
@@ -146,26 +114,13 @@ impl Network {
 
         let username = self.username().await;
 
-        send_packet(
-            &connection,
-            &Packet::Hello {
-                username,
-            },
-        )
-        .await?;
+        send_packet(&connection, &Packet::Hello { username }).await?;
 
         let peers = Arc::clone(&self.peers);
         let events = self.events_tx.clone();
 
         tokio::spawn(async move {
-            if let Err(error) =
-                handle_connection(
-                    connection,
-                    peers,
-                    events,
-                )
-                .await
-            {
+            if let Err(error) = handle_connection(connection, peers, events).await {
                 eprintln!("Connection error: {error}");
             }
         });
@@ -173,45 +128,33 @@ impl Network {
         Ok(address.to_string())
     }
 
-    pub async fn disconnect(
-        &self,
-        username: &str,
-    ) -> Result<(), String> {
+    pub async fn disconnect(&self, username: &str) -> Result<(), String> {
         let mut peers = self.peers.lock().await;
 
         if let Some(peer) = peers.remove(username) {
-            peer.connection
-                .close(0u32.into(), b"goodbye");
+            peer.connection.close(0u32.into(), b"goodbye");
 
-            let _ = self.events_tx.send(
-                IncomingMessage::PeerDisconnected {
-                    username: username.to_string(),
-                },
-            );
+            let _ = self.events_tx.send(IncomingMessage::PeerDisconnected {
+                username: username.to_string(),
+            });
 
             Ok(())
         } else {
-            Err(format!(
-                "Peer '{username}' is not connected."
-            ))
+            Err(format!("Peer '{username}' is not connected."))
         }
     }
 
     pub async fn peers(&self) -> Vec<String> {
         let peers = self.peers.lock().await;
 
-        let mut names: Vec<String> =
-            peers.keys().cloned().collect();
+        let mut names: Vec<String> = peers.keys().cloned().collect();
 
         names.sort();
 
         names
     }
 
-    pub async fn broadcast(
-        &self,
-        message: &str,
-    ) -> Result<(), String> {
+    pub async fn broadcast(&self, message: &str) -> Result<(), String> {
         let username = self.username().await;
 
         let packet = Packet::Chat {
@@ -222,33 +165,22 @@ impl Network {
         let peers = self.peers.lock().await;
 
         for peer in peers.values() {
-            send_packet(
-                &peer.connection,
-                &packet,
-            )
-            .await
-            .map_err(|error| error.to_string())?;
+            send_packet(&peer.connection, &packet)
+                .await
+                .map_err(|error| error.to_string())?;
         }
 
         Ok(())
     }
 
-    pub async fn send_direct(
-        &self,
-        target: &str,
-        message: &str,
-    ) -> Result<(), String> {
+    pub async fn send_direct(&self, target: &str, message: &str) -> Result<(), String> {
         let username = self.username().await;
 
         let peers = self.peers.lock().await;
 
         let peer = peers
             .get(target)
-            .ok_or_else(|| {
-                format!(
-                    "Peer '{target}' is not connected."
-                )
-            })?;
+            .ok_or_else(|| format!("Peer '{target}' is not connected."))?;
 
         let packet = Packet::Direct {
             from: username,
@@ -256,12 +188,9 @@ impl Network {
             message: message.to_string(),
         };
 
-        send_packet(
-            &peer.connection,
-            &packet,
-        )
-        .await
-        .map_err(|error| error.to_string())
+        send_packet(&peer.connection, &packet)
+            .await
+            .map_err(|error| error.to_string())
     }
 
     fn start_accept_loop(&self) {
@@ -270,33 +199,20 @@ impl Network {
         let events = self.events_tx.clone();
 
         tokio::spawn(async move {
-            while let Some(incoming) =
-                endpoint.accept().await
-            {
+            while let Some(incoming) = endpoint.accept().await {
                 let peers = Arc::clone(&peers);
                 let events = events.clone();
 
                 tokio::spawn(async move {
                     match incoming.await {
                         Ok(connection) => {
-                            if let Err(error) =
-                                handle_connection(
-                                    connection,
-                                    peers,
-                                    events,
-                                )
-                                .await
-                            {
-                                eprintln!(
-                                    "Incoming connection error: {error}"
-                                );
+                            if let Err(error) = handle_connection(connection, peers, events).await {
+                                eprintln!("Incoming connection error: {error}");
                             }
                         }
 
                         Err(error) => {
-                            eprintln!(
-                                "Failed to accept connection: {error}"
-                            );
+                            eprintln!("Failed to accept connection: {error}");
                         }
                     }
                 });
@@ -311,14 +227,9 @@ async fn send_packet(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let data = serde_json::to_vec(packet)?;
 
-    let mut stream =
-        connection.open_uni().await?;
+    let mut stream = connection.open_uni().await?;
 
-    tokio::io::AsyncWriteExt::write_all(
-        &mut stream,
-        &data,
-    )
-    .await?;
+    tokio::io::AsyncWriteExt::write_all(&mut stream, &data).await?;
 
     stream.finish()?;
 
@@ -331,19 +242,35 @@ async fn handle_connection(
     events: UnboundedSender<IncomingMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
-        let mut stream =
-            connection.accept_uni().await?;
+        let mut stream = match connection.accept_uni().await {
+            Ok(stream) => stream,
+
+            // The connection timed out normally.
+            Err(quinn::ConnectionError::TimedOut) => {
+                break;
+            }
+
+            // The connection was closed locally.
+            Err(quinn::ConnectionError::LocallyClosed) => {
+                break;
+            }
+
+            // The remote peer closed the application connection.
+            Err(quinn::ConnectionError::ApplicationClosed(_)) => {
+                break;
+            }
+
+            // Anything else is an actual connection error.
+            Err(error) => {
+                return Err(error.into());
+            }
+        };
 
         let mut data = Vec::new();
 
-        tokio::io::AsyncReadExt::read_to_end(
-            &mut stream,
-            &mut data,
-        )
-        .await?;
+        tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut data).await?;
 
-        let packet: Packet =
-            serde_json::from_slice(&data)?;
+        let packet: Packet = serde_json::from_slice(&data)?;
 
         match packet {
             Packet::Hello { username } => {
@@ -354,91 +281,46 @@ async fn handle_connection(
                     },
                 );
 
-                let _ = events.send(
-                    IncomingMessage::PeerConnected {
-                        username,
-                        address: connection.remote_address(),
-                    },
-                );
+                let _ = events.send(IncomingMessage::PeerConnected {
+                    username,
+                    address: connection.remote_address(),
+                });
             }
 
-            Packet::Chat {
-                from,
-                message,
-            } => {
-                let _ = events.send(
-                    IncomingMessage::Chat {
-                        from,
-                        message,
-                    },
-                );
+            Packet::Chat { from, message } => {
+                let _ = events.send(IncomingMessage::Chat { from, message });
             }
 
-            Packet::Direct {
-                from,
-                to,
-                message,
-            } => {
-                let local_username = {
-                    let identity =
-                        peers.lock().await;
-
-                    drop(identity);
-
-                    None::<String>
-                };
-
-                let _ = local_username;
-
-                let _ = events.send(
-                    IncomingMessage::Direct {
-                        from,
-                        to,
-                        message,
-                    },
-                );
+            Packet::Direct { from, to, message } => {
+                let _ = events.send(IncomingMessage::Direct { from, to, message });
             }
         }
     }
+
+    Ok(())
 }
 
-fn make_server_config(
-) -> Result<
-    ServerConfig,
-    Box<dyn std::error::Error + Send + Sync>,
-> {
-    let certified =
-        rcgen::generate_simple_self_signed(
-            vec!["localhost".to_string()],
-        )?;
+fn make_server_config() -> Result<ServerConfig, Box<dyn std::error::Error + Send + Sync>> {
+    let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])?;
 
-    let cert_der =
-        certified.cert.der().to_vec();
+    let cert_der = certified.cert.der().to_vec();
 
-    let key_der =
-        certified.key_pair.serialize_der();
+    let key_der = certified.key_pair.serialize_der();
 
-    let cert_chain = vec![
-        CertificateDer::from(cert_der),
-    ];
+    let cert_chain = vec![CertificateDer::from(cert_der)];
 
-    let private_key =
-        PrivateKeyDer::try_from(key_der)?;
+    let private_key = PrivateKeyDer::try_from(key_der)?;
 
-    let mut config =
-        ServerConfig::with_single_cert(
-            cert_chain,
-            private_key,
-        )?;
+    let mut config = ServerConfig::with_single_cert(cert_chain, private_key)?;
 
     let transport =
-        Arc::get_mut(&mut config.transport)
-            .expect(
-                "transport config should be uniquely owned",
-            );
+        Arc::get_mut(&mut config.transport).expect("transport config should be uniquely owned");
 
-    transport
-        .max_concurrent_uni_streams(128_u32.into());
+    transport.max_concurrent_uni_streams(128_u32.into());
+
+    // Send QUIC keep-alive packets so idle connections
+    // don't get closed while nobody is chatting.
+    transport.keep_alive_interval(Some(Duration::from_secs(5)));
 
     Ok(config)
 }
@@ -454,91 +336,71 @@ impl ServerCertVerifier for SkipServerVerification {
         _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
         _now: UnixTime,
-    ) -> Result<
-        ServerCertVerified,
-        rustls::Error,
-    > {
+    ) -> Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
         &self,
         message: &[u8],
-        cert: &CertificateDer<'_>,
+        cert: &CertificateDer,
         dss: &DigitallySignedStruct,
-    ) -> Result<
-        HandshakeSignatureValid,
-        rustls::Error,
-    > {
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
         rustls::crypto::verify_tls12_signature(
             message,
             cert,
             dss,
-            &rustls::crypto::ring::default_provider()
-                .signature_verification_algorithms,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
         )
     }
 
     fn verify_tls13_signature(
         &self,
         message: &[u8],
-        cert: &CertificateDer<'_>,
+        cert: &CertificateDer,
         dss: &DigitallySignedStruct,
-    ) -> Result<
-        HandshakeSignatureValid,
-        rustls::Error,
-    > {
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
         rustls::crypto::verify_tls13_signature(
             message,
             cert,
             dss,
-            &rustls::crypto::ring::default_provider()
-                .signature_verification_algorithms,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
         )
     }
 
-    fn supported_verify_schemes(
-        &self,
-    ) -> Vec<SignatureScheme> {
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         rustls::crypto::ring::default_provider()
             .signature_verification_algorithms
             .supported_schemes()
     }
 }
 
-fn make_client_config() -> Result<
-    ClientConfig,
-    Box<dyn std::error::Error + Send + Sync>,
-> {
+fn make_client_config() -> Result<ClientConfig, Box<dyn std::error::Error + Send + Sync>> {
     let crypto = rustls::ClientConfig::builder()
         .dangerous()
-        .with_custom_certificate_verifier(
-            Arc::new(SkipServerVerification),
-        )
+        .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
         .with_no_client_auth();
 
-    let crypto =
-        quinn::crypto::rustls::QuicClientConfig::try_from(
-            crypto,
-        )?;
+    let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)?;
 
-    Ok(ClientConfig::new(
-        Arc::new(crypto),
-    ))
+    let mut config = ClientConfig::new(Arc::new(crypto));
+
+    let mut transport = TransportConfig::default();
+
+    // Keep outgoing connections alive too.
+    transport.keep_alive_interval(Some(Duration::from_secs(5)));
+
+    config.transport_config(Arc::new(transport));
+
+    Ok(config)
 }
 
 impl Network {
     #[allow(dead_code)]
-    fn configure_client(
-        &mut self,
-    ) -> Result<
-        (),
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
+    fn configure_client(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = make_client_config()?;
 
-        self.endpoint
-            .set_default_client_config(config);
+        self.endpoint.set_default_client_config(config);
 
         Ok(())
     }
